@@ -33,18 +33,25 @@ if file is not None:
 
         cap = cv2.VideoCapture(tfile.name)
         stframe = st.empty()
-        with mp_hands.Hands(static_image_mode=False, max_num_hands=2) as hands:
+
+        with mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.7) as hands:
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
+
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = hands.process(frame_rgb)
+
                 if results.multi_hand_landmarks:
                     for hand_landmarks in results.multi_hand_landmarks:
                         mp_drawing.draw_landmarks(
                             frame, hand_landmarks, mp_hands.HAND_CONNECTIONS
                         )
-                stframe.image(frame, channels="BGR")
+                else:
+                    print("手を検出できませんでした")
+
+                # フレームを表示
+                stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
         cap.release()
 
