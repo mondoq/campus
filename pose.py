@@ -8,7 +8,7 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
 def detect_hand(image):
-    with mp_hands.Hands(static_image_mode=True, max_num_hands=2) as hands:
+    with mp_hands.Hands(static_image_mode=True, max_num_hands=2,min_detection_confidence=0.7) as hands:
         results = hands.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
