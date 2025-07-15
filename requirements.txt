@@ -3,3 +3,5 @@ pandas
 numpy
 opencv-python-headless
 mediapipe
+os
+tempfile
