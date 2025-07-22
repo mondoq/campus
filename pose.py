@@ -1,4 +1,3 @@
-import streamlit as st
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -6,94 +5,102 @@ import tempfile
 import os
 
 # ページ設定
-st.set_page_config(page_title="てのほねけんしゅつアプリ", layout="centered")
+st.set_page_config(page_title="おりがみうごきよそくアプリ", layout="centered")
 
-# MediaPipe Hands 初期化
-mp_hands = mp.solutions.hands
+# MediaPipe Pose 初期化
+mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# タイトル
-st.markdown("<h1 style='color: #4D90FE;'>🖐️ てのほねを みてみよう！</h1>", unsafe_allow_html=True)
-st.write("えいぞうや しゃしんを アップしてね。")
+# ヘッダー
+st.markdown("<h1 style='color: #FF69B4;'>🧠 おりがみうごきよそくアプリ</h1>", unsafe_allow_html=True)
+st.write("📸 おりがみをしている どうがをアップしてね。つぎの てのうごきが いつかをよそくするよ！")
 
-# 手の検出（画像用）
-def detect_hand_image(image):
-    with mp_hands.Hands(static_image_mode=True, max_num_hands=1, min_detection_confidence=0.7) as hands:
-        results = hands.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-    return image
+# 動き検出
+def detect_movement_timing(landmarks_list, fps, threshold=0.03):
+    movement_times = []
+    prev_y = None
 
-# 手の検出（動画用・軽量化）
-def detect_hand_video(video_file):
-    cap = cv2.VideoCapture(video_file)
+    for i, lm in enumerate(landmarks_list):
+        if "RIGHT_WRIST" in lm:
+            curr_y = lm["RIGHT_WRIST"].y
+            if prev_y is not None:
+                dy = abs(curr_y - prev_y)
+                if dy > threshold:
+                    movement_times.append(i / fps)
+            prev_y = curr_y
+
+    return movement_times
+
+# 予測タイミング
+def predict_next_time(movement_times):
+    if len(movement_times) < 2:
+        return None
+    intervals = [t2 - t1 for t1, t2 in zip(movement_times, movement_times[1:])]
+    avg_interval = sum(intervals) / len(intervals)
+    return movement_times[-1] + avg_interval
+
+# 骨格検出と動画出力
+def process_video(file_path):
+    cap = cv2.VideoCapture(file_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    w, h = 640, 360  # ✅ 解像度を固定して軽量化
+    w, h = 640, 360
 
-    output_path = os.path.join(tempfile.gettempdir(), "output_hand_pose.mp4")
+    landmarks_list = []
+    output_path = os.path.join(tempfile.gettempdir(), "origami_movement_output.mp4")
     out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
     stframe = st.empty()
 
-    with mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7) as hands:
-        frame_idx = 0
+    with mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5) as pose:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            frame = cv2.resize(frame, (w, h))  # ✅ 解像度を縮小
+            frame = cv2.resize(frame, (w, h))
+            image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = pose.process(image_rgb)
 
-            if frame_idx % 2 == 0:  # ✅ 1フレームおきに推論
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = hands.process(frame_rgb)
+            landmarks = {}
+            if result.pose_landmarks:
+                mp_drawing.draw_landmarks(frame, result.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                for idx, lm in enumerate(result.pose_landmarks.landmark):
+                    landmarks[mp_pose.PoseLandmark(idx).name] = lm
 
-                if results.multi_hand_landmarks:
-                    for hand_landmarks in results.multi_hand_landmarks:
-                        mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
-            stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
+            landmarks_list.append(landmarks)
             out.write(frame)
-            frame_idx += 1
+            stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
 
     cap.release()
     out.release()
-    return output_path
+    return output_path, landmarks_list, fps
 
 # ファイルアップロード
-file = st.file_uploader("ファイルを えらんでね（しゃしん or どうが）", type=["jpg", "jpeg", "png", "mp4"])
+file = st.file_uploader("📥 どうがファイルを アップロードしてね（mp4形式）", type=["mp4"])
 
 if file is not None:
-    file_type = file.type
+    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tfile.write(file.read())
+    tfile.flush()
 
-    if "image" in file_type:
-        file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    st.info("🔍 どうがをけんしゅつちゅう... しばらくまってね！")
+    output_path, landmarks_list, fps = process_video(tfile.name)
 
-        if image is not None:
-            output_image = detect_hand_image(image)
-            st.image(output_image, channels="BGR", caption="✨ これが きみの てのほね だよ！")
-            st.success("すごいね！ての ほねが みえたよ 👏")
-        else:
-            st.error("画像の読み込みに失敗しました。")
+    st.success("✅ けんしゅつできたよ！")
 
-    elif "video" in file_type:
-        tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        tfile.write(file.read())
-        tfile.flush()
+     #動き・予測
+    movement_times = detect_movement_timing(landmarks_list, fps)
+    predicted_time = predict_next_time(movement_times)
 
-        st.info("🎞️ 動画を処理中です。しばらくお待ちください...")
-        output_video_path = detect_hand_video(tfile.name)
+    if movement_times:
+        st.markdown(f"<h3>📍 {len(movement_times)} かい うごきがあったよ！</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h4>うごいたじかん：{', '.join(f'{t:.1f}s' for t in movement_times)}</h4>", unsafe_allow_html=True)
 
-        st.success("✨ ての ほねを けんしゅつしたよ！すごいね！")
-
-        with open(output_video_path, "rb") as f:
-            st.download_button(
-                label="📥 けんしゅつしたどうがを ダウンロード",
-                data=f,
-                file_name="hand_pose_output.mp4",
-                mime="video/mp4"
-            )
+    if predicted_time:
+       st.markdown(f"<h2 style='color: orange;'>🔮 つぎの てのうごきは {predicted_time:.1f} びょうごろかも！</h2>", unsafe_allow_html=True)
     else:
-        st.error("対応していないファイル形式です。")
-        
+        st.warning("うごきがすくなくて、つぎのよそくがむずかしかったよ。")
+
+    st.video(output_path)
+    with open(output_path, "rb") as f:
+        st.download_button("📥 ダウンロードする", f, "origami_movement_output.mp4", "video/mp4")
+
