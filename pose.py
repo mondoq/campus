@@ -16,8 +16,6 @@ mp_drawing = mp.solutions.drawing_utils
 mp_styles = mp.solutions.drawing_styles
 
 # （将来の同期度計算で使う場合に備えて残置）
-from tslearn.metrics import dtw as ts_dtw
-from tslearn.barycenters import dtw_barycenter_averaging as ts_dba
 
 # -----------------------------
 # Helpers
